@@ -7,7 +7,7 @@ description: 修復占卜歷史中 AI 解卦失敗 (error) 的紀錄，使用 AI
 
 ## 功能說明
 
-修復 `history/` 資料夾中 `ai_status` 為 `"error"` 的占卜紀錄。根據該次紀錄中的使用者提問、本卦與變卦抽牌結果，重新呼叫 Gemini API 生成解讀，並補足缺失的 AI 語音。
+修復 `history/` 資料夾中 `ai_status` 取值為 `"error"`（或部分項目如解讀、語音失敗）的占卜紀錄。系統會根據該次紀錄中的使用者提問、本卦與變卦結果，重新確保解讀成功生成，並接續產生遺漏的語音。
 
 ## 使用時機
 
@@ -36,7 +36,7 @@ conda activate toby
 python tools/repair_readings.py --list
 ```
 
-這會列出所有 AI 狀態為 error 的紀錄，包含日期、ID、問題和卦象。
+這會列出所有需要修復（包含文本解讀失敗或語音生成失敗）的紀錄，顯示狀態、日期、ID 和問題。
 
 ### 步驟 3：修復紀錄
 

@@ -7,3 +7,4 @@ tavily-python
 SpeechRecognition
 pydub
 streamlit-mic-recorder
+pyttsx3
