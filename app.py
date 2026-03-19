@@ -74,10 +74,39 @@ with st.sidebar:
 if page == "☯️ 卜卦":
     st.title("☯️ AI I Ching (易經自動算命)")
     
+    if "user_question_input" not in st.session_state:
+        st.session_state["user_question_input"] = ""
+
+    from core.stt import process_transcription
+    from streamlit_mic_recorder import mic_recorder
+
+    col1, col2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
+    with col2:
+        st.markdown("🗣️ **語音輸入**")
+        audio_record = mic_recorder(
+            start_prompt="錄音 🎤",
+            stop_prompt="停止 ⏹️",
+            key='recorder'
+        )
+
+    if audio_record:
+        audio_bytes = audio_record['bytes']
+        audio_hash = hash(audio_bytes)
+        if st.session_state.get("last_audio_hash") != audio_hash:
+            result = process_transcription(audio_bytes, format_hint="webm")
+            if result and not result.startswith(("⚠️", "❌")):
+                st.session_state["user_question_input"] = result
+                st.success("✅ 辨識成功！請在下方確認或修改。")
+            else:
+                st.error(result)
+            st.session_state["last_audio_hash"] = audio_hash
+
+    # 使用者提問輸入框 (若語音辨識成功，會透過 key 自動帶入)
     user_question = st.text_area(
-        "🔮 請輸入你想問易經的問題",
+        "🔮 請輸入你想問易經的問題，或用語音輸入直接修改：",
         placeholder="例如：我最近的感情運勢如何？/ 我該不該換工作？/ 這段關係的未來走向是什麼？",
         height=80,
+        key="user_question_input"
     )
 
     if 'draw_button' in locals() and draw_button:
