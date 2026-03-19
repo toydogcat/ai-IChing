@@ -26,8 +26,12 @@ def list_errors():
     for d in dates:
         records = load_history(d)
         for r in records:
-            if r.get("ai_status") == "error":
-                print(f"[ERROR] Date: {d} | ID: {r['id']} | Q: {r['question']}")
+            ai_status = r.get("ai_status", {})
+            if not isinstance(ai_status, dict):
+                ai_status = {"interpretation": ai_status, "audio": "success" if ai_status in ["success", "recovered"] else "error"}
+                
+            if ai_status.get("interpretation") == "error" or ai_status.get("audio") == "error":
+                print(f"[ERROR/WARNING] Date: {d} | ID: {r['id']} | Q: {r['question']} | Status: {ai_status}")
                 error_count += 1
     if error_count == 0:
         print("🎉 恭喜！沒有任何狀態為 error 的紀錄。")
@@ -49,39 +53,62 @@ def repair_record(date_str, record_id=None, repair_all=False):
     repaired_count = 0
 
     for r in records:
-        if r.get("ai_status") != "error":
+        ai_status = r.get("ai_status", {})
+        if not isinstance(ai_status, dict):
+            ai_status = {"interpretation": ai_status, "audio": "success" if ai_status in ["success", "recovered"] else "error"}
+            
+        interp_status = ai_status.get("interpretation", "error")
+        audio_status = ai_status.get("audio", "error")
+        
+        if interp_status != "error" and audio_status != "error":
             continue
             
         if not repair_all and r["id"] != record_id:
             continue
 
         prompt = r.get("ai_prompt")
-        if not prompt:
-            logger.error(f"❌ ID {r['id']} 缺少 ai_prompt，無法自動修復。")
+        if not prompt and interp_status == "error":
+            logger.error(f"❌ ID {r['id']} 缺少 ai_prompt，無法自動修復文字解讀。")
             continue
 
         try:
-            logger.info(f"🔄 正在重新呼叫 Gemini 修復 ID: {r['id']} ...")
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
-            interpretation = response.text
+            if interp_status == "error":
+                logger.info(f"🔄 正在重新呼叫 Gemini 修復 ID: {r['id']} ...")
+                # Wait for rate limit mitigation just in case there are many in a row
+                import time
+                time.sleep(1)
+                
+                response = client.models.generate_content(
+                    model="gemini-3.1-flash-lite-preview",
+                    contents=prompt,
+                )
+                interpretation = response.text
+                r["ai_interpretation"] = interpretation
+            else:
+                logger.info(f"🔄 正在為 ID: {r['id']} 補成語音...")
+                interpretation = r.get("ai_interpretation", "")
             
             audio_path = generate_audio(interpretation, r["id"])
             
-            r["ai_interpretation"] = interpretation
-            r["ai_status"] = "recovered"
-            r["recovered_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if not isinstance(r.get("ai_status"), dict):
+                r["ai_status"] = {"interpretation": "recovered", "audio": "recovered"}
+                
+            r["ai_status"]["interpretation"] = "recovered"
+            
             if audio_path:
                 r["ai_interpretation_audio_path"] = audio_path
+                r["ai_status"]["audio"] = "recovered"
+            else:
+                r["ai_status"]["audio"] = "error"
+                
+            r["recovered_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            logger.info(f"✅ 修復成功！ID: {r['id']}")
+            logger.info(f"✅ 修復完成！ID: {r['id']}")
             modified = True
             repaired_count += 1
 
         except Exception as e:
-            logger.error(f"❌ Gemini API 發生錯誤, ID {r['id']}: {e}")
+            logger.error(f"❌ 發生錯誤, ID {r['id']}: {e}")
 
         if not repair_all:
             break

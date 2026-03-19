@@ -1,5 +1,7 @@
 import os
+import time
 from google import genai
+from google.genai import errors
 from core.logger import get_logger
 
 logger = get_logger("interpreter")
@@ -11,7 +13,7 @@ def get_gemini_client() -> genai.Client | None:
         return None
     return genai.Client(api_key=api_key)
 
-def build_interpretation_prompt(question: str, result: dict) -> str:
+def build_interpretation_prompt(question: str, result: dict, search_context: str = "") -> str:
     """
     根據使用者問題、本卦與變卦，建構 Gemini 提示詞
     """
@@ -19,7 +21,11 @@ def build_interpretation_prompt(question: str, result: dict) -> str:
     orig_hex = result["original_hexagram"]
     changed_hex = result["changed_hexagram"]
     
-    prompt = f"使用者問題：{question}\n\n卜卦結果：\n"
+    prompt = f"使用者問題：{question}\n\n"
+    if search_context:
+        prompt += f"{search_context}\n\n"
+        
+    prompt += "卜卦結果：\n"
     prompt += f"本卦：{orig_hex['name']} ({orig_hex['description']})\n"
     
     moving_lines = []
@@ -52,15 +58,39 @@ def get_ai_interpretation(question: str, result: dict) -> str:
     if not client:
         return "⚠️ 請先在 .env 中設定 GEMINI_API_KEY 才能使用 AI 解卦功能。"
 
+    MODEL_ID = "gemini-3.1-flash-lite-preview"
     prompt = build_interpretation_prompt(question, result)
 
-    try:
-        logger.info("Calling Gemini API for interpretation...")
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        return "error"
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Calling {MODEL_ID} for interpretation (Attempt {attempt + 1}/{max_retries})...")
+            response = client.models.generate_content(
+                model=MODEL_ID,
+                contents=prompt,
+            )
+            return response.text
+            
+        except errors.ClientError as e:
+            # 偵測是否為配額已滿 (HTTP 429)
+            if e.code == 429:
+                wait_time = (attempt + 1) * 10
+                logger.warning(f"⚠️ 配額已滿 (429 Error)。將在 {wait_time} 秒後重試...")
+                
+                if attempt < max_retries - 1:
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error("API quota exceeded after max retries.")
+                    return "❌ 目前 API 使用量已達上限，請稍後再試。"
+            
+            # 其他 Client 錯誤
+            logger.error(f"Gemini Client Error: {e}")
+            return "error"
+
+        except Exception as e:
+            # 系統性錯誤
+            logger.error(f"Unexpected error: {e}")
+            return "error"
+
+    return "error"

@@ -21,12 +21,14 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 VOICE = "zh-TW-HsiaoChenNeural"
 
-def check_internet():
+import socket
+
+def check_internet(host="8.8.8.8", port=53, timeout=2):
     try:
-        # Check connection using a reliable host
-        urllib.request.urlopen("http://8.8.8.8", timeout=2)
+        socket.setdefaulttimeout(timeout)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
         return True
-    except:
+    except socket.error as ex:
         return False
 
 async def _generate_audio_async(text, file_path):

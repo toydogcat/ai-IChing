@@ -25,7 +25,7 @@ def load_history(date_str=None):
         logger.error(f"Failed to load history file {file_path}: {e}")
         return []
 
-def save_reading(question, result, interpretation, ai_prompt=""):
+def save_reading(question, result, interpretation, ai_prompt="", search_status="skipped"):
     date_str = datetime.now().strftime("%Y-%m-%d")
     time_str = datetime.now().strftime("%H:%M:%S")
     record_id = str(uuid.uuid4())[:8]
@@ -40,7 +40,11 @@ def save_reading(question, result, interpretation, ai_prompt=""):
         "question": question,
         "ai_prompt": ai_prompt,
         "ai_interpretation": interpretation,
-        "ai_status": "success" if interpretation and not interpretation.startswith("⚠️") and interpretation != "error" else "error",
+        "ai_status": {
+            "interpretation": "success" if interpretation and not interpretation.startswith("⚠️") and not interpretation.startswith("❌") and interpretation != "error" else "error",
+            "audio": "error",
+            "search": search_status
+        },
         "result": {
             "tosses": result["tosses"],
             "original_hexagram": result["original_hexagram"]["name"] if result["original_hexagram"] else None,
@@ -82,9 +86,20 @@ def update_record_interpretation(date_str, record_id, interpretation, audio_path
     for record in history:
         if record["id"] == record_id:
             record["ai_interpretation"] = interpretation
-            record["ai_status"] = "success" if interpretation and not interpretation.startswith("⚠️") and interpretation != "error" else "error"
+            
+            if not isinstance(record.get("ai_status"), dict):
+                record["ai_status"] = {"interpretation": "error", "audio": "error", "search": "skipped"}
+                
+            if "search" not in record["ai_status"]:
+                record["ai_status"]["search"] = "skipped"
+                
+            interp_status = "success" if interpretation and not interpretation.startswith("⚠️") and not interpretation.startswith("❌") and interpretation != "error" else "error"
+            record["ai_status"]["interpretation"] = interp_status
+            
             if audio_path:
                 record["ai_interpretation_audio_path"] = audio_path
+                record["ai_status"]["audio"] = "success"
+                
             record["recovered_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             break
             

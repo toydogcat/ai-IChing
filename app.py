@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -7,6 +8,7 @@ from core.history import save_reading, update_record_interpretation, search_hist
 from core.tts import generate_audio
 from core.interpreter import get_ai_interpretation, build_interpretation_prompt
 from core.logger import get_logger
+from core.search import perform_tavily_search
 
 load_dotenv()
 logger = get_logger("app")
@@ -83,6 +85,22 @@ if page == "☯️ 卜卦":
             st.warning("請先輸入你想問的問題再卜卦 🙏")
         else:
             logger.info(f"使用者提問：{user_question.strip()}")
+            
+            search_context = ""
+            search_status = "skipped"
+            
+            with st.spinner("🔍 正在搜尋相關新聞/資料..."):
+                search_context, search_success = perform_tavily_search(user_question.strip())
+                if search_success:
+                    st.toast("✅ 外部資料搜尋成功！", icon="✅")
+                    search_status = "success"
+                else:
+                    st.toast("⚠️ 外部搜尋未設定或無結果，已略過。", icon="⚠️")
+                    if os.getenv("TAVILY_API_KEY") and os.getenv("TAVILY_API_KEY") != "your_tavily_api_key_here":
+                        search_status = "error"
+                    else:
+                        search_status = "skipped"
+
             with st.spinner("神明指引中..."):
                 result = perform_divination()
                 
@@ -91,7 +109,7 @@ if page == "☯️ 卜卦":
             
             logger.info("卜卦完成")
             
-            ai_prompt = build_interpretation_prompt(user_question.strip(), result)
+            ai_prompt = build_interpretation_prompt(user_question.strip(), result, search_context)
             
             interpretation = None
             with st.spinner("🔮 AI 正在為您解卦..."):
@@ -104,7 +122,7 @@ if page == "☯️ 卜卦":
                 
             st.session_state["last_interpretation"] = interpretation
             
-            record_id = save_reading(user_question.strip(), result, interpretation, ai_prompt=ai_prompt)
+            record_id = save_reading(user_question.strip(), result, interpretation, ai_prompt=ai_prompt, search_status=search_status)
             st.session_state["last_record_id"] = record_id
             
             if interpretation and not interpretation.startswith("⚠️") and interpretation != "error":
@@ -142,9 +160,9 @@ if page == "☯️ 卜卦":
                 
         if "last_interpretation" in st.session_state and st.session_state["last_interpretation"]:
             interpretation = st.session_state["last_interpretation"]
-            if interpretation == "error" or interpretation.startswith("⚠️"):
+            if interpretation == "error" or interpretation.startswith("⚠️") or interpretation.startswith("❌"):
                 st.error("AI 解卦過程中發生錯誤，此次紀錄已標記為 error。")
-                if interpretation.startswith("⚠️"):
+                if interpretation.startswith("⚠️") or interpretation.startswith("❌"):
                     st.warning(interpretation)
             else:
                 st.markdown("---")
@@ -161,8 +179,28 @@ elif page == "📜 歷史紀錄":
     st.markdown("---")
     
     def render_history_record(record, show_date=False):
-        ai_status = record.get("ai_status", "unknown")
-        status_icon = {"success": "✅", "error": "❌", "recovered": "🔄"}.get(ai_status, "❓")
+        ai_status = record.get("ai_status", {})
+        if not isinstance(ai_status, dict):
+            ai_status = {
+                "interpretation": ai_status if ai_status in ["success", "recovered", "error"] else "error",
+                "audio": "success" if ai_status in ["success", "recovered"] else "error",
+                "search": "skipped"
+            }
+            
+        interp_status = ai_status.get("interpretation", "error")
+        audio_status = ai_status.get("audio", "error")
+        search_status = ai_status.get("search", "skipped")
+        
+        if interp_status == "error":
+            status_icon = "❌"
+            status_text = "需修復解讀"
+        elif audio_status == "error":
+            status_icon = "⚠️"
+            status_text = "缺少語音需補件"
+        else:
+            status_icon = "✅"
+            status_text = "完成"
+            
         date_str = f"[{record.get('_date', '')} " if show_date and "_date" in record else "["
         title_time = f"{date_str}{record['time_display']}] "
         
@@ -171,7 +209,7 @@ elif page == "📜 歷史紀錄":
         with st.expander(title):
             st.markdown(f"**問題：** {record['question']}")
             st.markdown(f"**ID：** `{record['id']}`")
-            st.markdown(f"**AI 狀態：** {status_icon} {ai_status}")
+            st.markdown(f"**AI 狀態：** {status_icon} {status_text} (文字: {interp_status}, 語音: {audio_status}, 搜尋: {search_status})")
             
             orig_hex = record['result']['original_hexagram']
             changed_hex = record['result']['changed_hexagram']
@@ -184,7 +222,7 @@ elif page == "📜 歷史紀錄":
                     st.markdown(f"- 第{i+1}爻：變爻 ({line['value']} {line['symbol']})")
                     
             st.markdown("---")
-            if record["ai_interpretation"] == "error":
+            if interp_status == "error":
                 st.error("AI 解卦失敗。")
             else:
                 if record.get("recovered_at"):
