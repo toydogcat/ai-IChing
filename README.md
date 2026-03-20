@@ -70,6 +70,32 @@ python run.py
 ```
 執行後，終端機將顯示本機存取網址，以及 Ngrok 分享的遠端網址。
 
+## 🧰 實用工具 (Utilities)
+
+專案提供了一些輔助開發的腳本工具，放置於 `tools/` 目錄下：
+
+### 圖片批次轉換工具 (PNG to JPG)
+這可以用來批次將 `assets/images/` 目錄下的所有 PNG 圖片轉換為 JPG 格式，以節省儲存空間（AI 生成的意境圖常有轉檔需求）。工具會自動處理透明背景並跳過已轉換的檔案。
+
+**基本用法：**
+```bash
+python tools/convert_png_to_jpg.py
+```
+
+**進階用法：**
+- **自訂品質** (例如設定為 `90`，預設為 `85`)：
+  ```bash
+  python tools/convert_png_to_jpg.py 90
+  ```
+- **轉換後自動刪除**原始 PNG 檔案：
+  ```bash
+  python tools/convert_png_to_jpg.py --delete
+  ```
+- **合併使用**：
+  ```bash
+  python tools/convert_png_to_jpg.py 90 --delete
+  ```
+
 ## 🛠 未來規劃
 - **專業 RAG 歷史哲學知識庫**：在目前的 Tavily 外部搜尋基礎上，進一步建立純粹的易經歷史、易理與典籍專屬向量資料庫。
 - **互動問答 Agent**：提供 Chatbot 介面，讓使用者能在線上釐清問題並深入對話探討卦意。
